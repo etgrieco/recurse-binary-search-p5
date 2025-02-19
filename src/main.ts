@@ -54,9 +54,11 @@ export const myp5 = new p5(function (p: p5) {
     posX: 0,
     posY: 0,
   }));
+  // start at full alpha
+  let boxAlphaDecay = 255;
 
-  // DEBUG: start phase
-  animationPhase = "SPIT_OUT_10";
+  // DEBUG: start phase; should be START in prod
+  animationPhase = "START";
 
   Object.assign(p, {
     preload() {
@@ -73,7 +75,7 @@ export const myp5 = new p5(function (p: p5) {
     },
     draw() {
       p.background("skyblue");
-      // Rotate around the y-axis.
+      p.orbitControl(); // helps with 'visual debugging', maybe turn off when done?
 
       if (animationPhase === "START") {
         // Draw the square -- 'holds numbers'
@@ -131,10 +133,22 @@ export const myp5 = new p5(function (p: p5) {
           animationPhase = "SPIT_OUT_10";
         }
       } else if (animationPhase === "SPIT_OUT_10") {
-        // Keep spinning...
+        const boxDecaySpeed = 3;
+        const boxSize = 50;
+
         p.push();
+
         p.rotateY(p.frameCount * 0.225);
-        p.box(-50, -50, -50);
+        drawBox(
+          p,
+          boxSize,
+          [255, 255, 255, boxAlphaDecay],
+          [0, 0, 0, boxAlphaDecay]
+        );
+        // decay fill
+        if (boxAlphaDecay > 0) {
+          boxAlphaDecay -= boxDecaySpeed;
+        }
         p.pop();
 
         // Then, put out 10 squares, like dealing cards!
@@ -159,7 +173,7 @@ export const myp5 = new p5(function (p: p5) {
             }
           );
 
-          if (everythingInItsRightPlace) {
+          if (everythingInItsRightPlace && boxAlphaDecay <= 0) {
             animationPhase = "END";
           }
         });
@@ -175,6 +189,48 @@ export const myp5 = new p5(function (p: p5) {
 declare global {
   interface Window {
     debug: Record<string, any>;
+  }
+}
+
+/** Manually draw a box, vs box() method, so I can do custom things to surfaces */
+function drawBox(
+  ctx: p5,
+  size: number,
+  fillColor: [number, number, number, number],
+  strokeColor: [number, number, number, number]
+) {
+  let halfSize = size / 2;
+
+  // Define the 8 corners of the cube
+  let vectors = [
+    ctx.createVector(-halfSize, -halfSize, halfSize), // 0: Front top-left
+    ctx.createVector(halfSize, -halfSize, halfSize), // 1: Front top-right
+    ctx.createVector(halfSize, halfSize, halfSize), // 2: Front bottom-right
+    ctx.createVector(-halfSize, halfSize, halfSize), // 3: Front bottom-left
+    ctx.createVector(-halfSize, -halfSize, -halfSize), // 4: Back top-left
+    ctx.createVector(halfSize, -halfSize, -halfSize), // 5: Back top-right
+    ctx.createVector(halfSize, halfSize, -halfSize), // 6: Back bottom-right
+    ctx.createVector(-halfSize, halfSize, -halfSize), // 7: Back bottom-left
+  ];
+
+  let faces = [
+    { indices: [0, 1, 2, 3] }, // Front
+    { indices: [5, 4, 7, 6] }, // Back
+    { indices: [4, 0, 3, 7] }, // Left
+    { indices: [1, 5, 6, 2] }, // Right
+    { indices: [4, 5, 1, 0] }, // Top
+    { indices: [3, 2, 6, 7] }, // Bottom
+  ];
+
+  for (let [i, face] of faces.entries()) {
+    ctx.fill(...fillColor);
+    ctx.stroke(...strokeColor);
+    ctx.beginShape();
+    for (let idx of face.indices) {
+      const vec = vectors[idx];
+      ctx.vertex(vec.x, vec.y, vec.z, i % 2, Math.floor(i / 2));
+    }
+    ctx.endShape(ctx.CLOSE);
   }
 }
 
