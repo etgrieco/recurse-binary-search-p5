@@ -1,39 +1,183 @@
-import './style.css';
-import p5 from 'p5';
+import "./style.css";
+import p5 from "p5";
 
-const root = document.getElementById('p5-root')
+const root = document.getElementById("p5-root");
 if (!root) {
-  throw new Error('Cannot find element root #p5-root')
+  throw new Error("Cannot find element root #p5-root");
 }
 
+function getNumber() {
+  return Math.floor(Math.random() * 100);
+}
+
+function randPosOrNegativeFactor() {
+  return Math.floor(Math.random()) ? -1 : 1;
+}
+
+// Equal, to the nearest Xth
+function isBasicallyEqual(a: number, b: number, power = 100): boolean {
+  return Math.round(a * power) === Math.round(b * power);
+}
+
+let animationPhase = "START" as
+  | "START"
+  | "SPAWN_RANDOM_NUMBERS"
+  | "COLLECT_NUMBERS"
+  | "SPIN_NUMBERS_SPINNING"
+  | "SPIT_OUT_10"
+  | "END";
+
+const FRAME_RATE_LOCK = 60;
+
 export const myp5 = new p5(function (p: p5) {
-  let font: p5.Font
+  let font: p5.Font;
+
+  // Global state
+  const sortedNumbers = new Array(10)
+    .fill(null)
+    .map(getNumber)
+    .sort((a, b) => a - b);
+
+  // SPAWN_RANDOM_NUMBERS state
+  const spawnRandomNumbersFactories: {
+    drawNumber: (context: p5) => void;
+    xPos: number;
+    yPos: number;
+  }[] = [];
+
+  // SPIN_NUMBERS_SPINNING state
+  let spinNumbersFrameCount = 0;
+
+  // SPIT_OUT_10 state
+  const sortedNumberObjs = sortedNumbers.map((n) => ({
+    n,
+    posX: 0,
+    posY: 0,
+  }));
+
+  // DEBUG: start phase
+  animationPhase = "SPIT_OUT_10";
 
   Object.assign(p, {
     preload() {
       // can preload assets here...
-      font = p.loadFont('/public/fonts/inconsolata.otf');
+      font = p.loadFont("/public/fonts/inconsolata.otf");
     },
     setup() {
-      p.createCanvas(500, 500, p.WEBGL);
-      p.background('skyblue');
-      p.describe('A white square with a black outline in on a gray canvas.');
-
+      p.frameRate(FRAME_RATE_LOCK);
+      p.createCanvas(800, 600, p.WEBGL);
+      p.background("skyblue");
       // setup some basic text + font
-      p.textFont(font)
-      p.textSize(36)
+      p.textFont(font);
+      p.textSize(36);
     },
     draw() {
-      p.background('skyblue');
+      p.background("skyblue");
       // Rotate around the y-axis.
-      p.orbitControl()
-    
-      // Draw the square -- 'holds numbers'
-      p.box(-50, -50, -50)
 
-      p.text('p5*js', 10, 50);
-      p.describe('The text "p5*js" written in pink on a white background.');
+      if (animationPhase === "START") {
+        // Draw the square -- 'holds numbers'
+        p.box(-50, -50, -50);
+        animationPhase = "COLLECT_NUMBERS";
+      } else if (animationPhase === "COLLECT_NUMBERS") {
+        p.box(-50, -50, -50);
+        // every second, spawn a number
+        if (p.frameCount % 15 === 0) {
+          const nodeNumber = getNumber();
+
+          const xPos = 0 + Math.random() * 100 * randPosOrNegativeFactor();
+          const yPos = -50 + Math.random() * 100 * randPosOrNegativeFactor();
+          spawnRandomNumbersFactories.push({
+            drawNumber(ctx) {
+              ctx.text(`${nodeNumber}`, this.xPos, this.yPos);
+            },
+            xPos,
+            yPos,
+          });
+        }
+
+        // go through factories...
+        spawnRandomNumbersFactories.forEach((f) => f.drawNumber(p));
+        p.describe("Box shooting out numbers");
+
+        if (spawnRandomNumbersFactories.length >= 10) {
+          animationPhase = "SPAWN_RANDOM_NUMBERS";
+        }
+      } else if (animationPhase === "SPAWN_RANDOM_NUMBERS") {
+        p.box(-50, -50, -50);
+        // Move to box origin...
+        spawnRandomNumbersFactories.forEach((f) => {
+          f.xPos = p.lerp(f.xPos, -10, 0.5);
+          f.yPos = p.lerp(f.yPos, 10, 0.5);
+          f.drawNumber(p);
+        });
+
+        if (
+          spawnRandomNumbersFactories.every(
+            (f) => f.xPos === -10 || f.yPos === 10
+          )
+        ) {
+          animationPhase = "SPIN_NUMBERS_SPINNING";
+        }
+      } else if (animationPhase === "SPIN_NUMBERS_SPINNING") {
+        p.push();
+        p.rotateY(p.frameCount * 0.225);
+        p.box(-50, -50, -50);
+        p.pop();
+        spinNumbersFrameCount++;
+
+        // Has been running for > 3 seconds of frames
+        if (spinNumbersFrameCount / FRAME_RATE_LOCK > 3) {
+          animationPhase = "SPIT_OUT_10";
+        }
+      } else if (animationPhase === "SPIT_OUT_10") {
+        // Keep spinning...
+        p.push();
+        p.rotateY(p.frameCount * 0.225);
+        p.box(-50, -50, -50);
+        p.pop();
+
+        // Then, put out 10 squares, like dealing cards!
+        let getTargetX = (idx: number) => idx * 70 - 350;
+        let getTargetY = (_idx: number) => 100;
+
+        sortedNumberObjs.forEach((num, idx) => {
+          num.posX = p.lerp(num.posX, getTargetX(idx), 0.05);
+          num.posY = p.lerp(num.posY, getTargetY(idx), 0.05);
+
+          p.push();
+          p.fill(255, 165, 0);
+          p.square(num.posX, num.posY, 50);
+          p.pop();
+
+          const everythingInItsRightPlace = sortedNumberObjs.every(
+            (obj, idx) => {
+              return (
+                isBasicallyEqual(obj.posX, getTargetX(idx)) &&
+                isBasicallyEqual(obj.posY, getTargetY(idx))
+              );
+            }
+          );
+
+          if (everythingInItsRightPlace) {
+            animationPhase = "END";
+          }
+        });
+      } else if (animationPhase === "END") {
+        p.text("THE END!", 0, 0);
+      } else {
+        window.alert(`unhandled animation state ${animationPhase}`);
+      }
     },
-    
-  } satisfies Partial<typeof p>)
+  } satisfies Partial<typeof p>);
 }, root);
+
+declare global {
+  interface Window {
+    debug: Record<string, any>;
+  }
+}
+
+window.debug = {};
+
+window.debug.getAnimationPhase = () => console.log(animationPhase);
