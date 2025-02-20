@@ -6,7 +6,7 @@ if (!root) {
   throw new Error("Cannot find element root #p5-root");
 }
 
-function getNumber() {
+function getRandomPossibleNumber() {
   return Math.floor(Math.random() * 100);
 }
 
@@ -25,6 +25,7 @@ let animationPhase = "START" as
   | "COLLECT_NUMBERS"
   | "SPIN_NUMBERS_SPINNING"
   | "SPIT_OUT_10"
+  | "BS_HIGH_LOW_MID_CALC"
   | "END";
 
 const FRAME_RATE_LOCK = 60;
@@ -32,11 +33,28 @@ const FRAME_RATE_LOCK = 60;
 export const myp5 = new p5(function (p: p5) {
   let font: p5.Font;
 
-  // Global state
+  // Global state setup
   const sortedNumbers = new Array(10)
     .fill(null)
-    .map(getNumber)
+    .map(getRandomPossibleNumber)
     .sort((a, b) => a - b);
+
+  // Some meaningless initial value to initialize the struct that will
+  // be used between draws
+  const binarySearchState = {
+    low: 0,
+    high: 0,
+    mid: 0,
+  };
+
+  const needleToFind = (function () {
+    const randomPresentValue =
+      sortedNumbers[Math.floor(Math.random() * sortedNumbers.length)];
+    const shouldUseFoundNeedle = Math.random() > 0.1; // ~10% of the time, turn up empty
+    return shouldUseFoundNeedle
+      ? getRandomPossibleNumber()
+      : randomPresentValue;
+  })();
 
   // SPAWN_RANDOM_NUMBERS state
   const spawnRandomNumbersFactories: {
@@ -57,8 +75,14 @@ export const myp5 = new p5(function (p: p5) {
   // start at full alpha
   let boxAlphaDecay = 255;
 
+  // BS_HIGH_LOW_MID_CALC state
+  const highLowMidCountState = {
+    highInitTime: 0,
+    lowInitTime: 0,
+  };
+
   // DEBUG: start phase; should be START in prod
-  animationPhase = "START";
+  animationPhase = "BS_HIGH_LOW_MID_CALC";
 
   Object.assign(p, {
     preload() {
@@ -83,9 +107,9 @@ export const myp5 = new p5(function (p: p5) {
         animationPhase = "COLLECT_NUMBERS";
       } else if (animationPhase === "COLLECT_NUMBERS") {
         p.box(-50, -50, -50);
-        // every second, spawn a number
+        // every so often, spawn a number
         if (p.frameCount % 15 === 0) {
-          const nodeNumber = getNumber();
+          const nodeNumber = getRandomPossibleNumber();
 
           const xPos = 0 + Math.random() * 100 * randPosOrNegativeFactor();
           const yPos = -50 + Math.random() * 100 * randPosOrNegativeFactor();
@@ -122,6 +146,9 @@ export const myp5 = new p5(function (p: p5) {
           animationPhase = "SPIN_NUMBERS_SPINNING";
         }
       } else if (animationPhase === "SPIN_NUMBERS_SPINNING") {
+        p.textAlign(p.CENTER, p.CENTER);
+        p.text("Sorting...", 0, -100);
+
         p.push();
         p.rotateY(p.frameCount * 0.225);
         p.box(-50, -50, -50);
@@ -133,21 +160,24 @@ export const myp5 = new p5(function (p: p5) {
           animationPhase = "SPIT_OUT_10";
         }
       } else if (animationPhase === "SPIT_OUT_10") {
-        const boxDecaySpeed = 3;
-        const boxSize = 50;
+        const BOX_DECAY_SPEED = 3;
+        const BOX_SIZE = 50;
+
+        p.textAlign(p.CENTER, p.CENTER);
+        p.fill(255, 255, 255, boxAlphaDecay);
+        p.text("Sorting...", 0, -100);
 
         p.push();
-
         p.rotateY(p.frameCount * 0.225);
         drawBox(
           p,
-          boxSize,
+          BOX_SIZE,
           [255, 255, 255, boxAlphaDecay],
           [0, 0, 0, boxAlphaDecay]
         );
         // decay fill
         if (boxAlphaDecay > 0) {
-          boxAlphaDecay -= boxDecaySpeed;
+          boxAlphaDecay -= BOX_DECAY_SPEED;
         }
         p.pop();
 
@@ -160,7 +190,7 @@ export const myp5 = new p5(function (p: p5) {
           num.posY = p.lerp(num.posY, getTargetY(idx), 0.05);
 
           p.push();
-          p.fill(255, 165, 0);
+          p.fill(0, 0, 0);
           p.square(num.posX, num.posY, 50);
           p.pop();
 
@@ -174,9 +204,70 @@ export const myp5 = new p5(function (p: p5) {
           );
 
           if (everythingInItsRightPlace && boxAlphaDecay <= 0) {
-            animationPhase = "END";
+            animationPhase = "BS_HIGH_LOW_MID_CALC";
           }
         });
+      } else if (animationPhase === "BS_HIGH_LOW_MID_CALC") {
+        // prepare the binary search initial state... (minor waste compute, who cares)
+        binarySearchState.low = 0;
+        binarySearchState.high = sortedNumbers.length - 1;
+        binarySearchState.mid = Math.floor(
+          (binarySearchState.high - binarySearchState.low) / 2
+        );
+
+        // Basic render details...
+        sortedNumberObjs.forEach((obj, idx) => {
+          // maybe these draw steps should be encapsulated?
+
+          // square
+          p.fill(0, 0, 0);
+          p.square(obj.posX, obj.posY, 50);
+
+          // and their corresponding indices
+          p.textAlign(p.CENTER, p.BASELINE);
+          p.text(`${idx}`, obj.posX + 50 / 2, obj.posY + 100);
+        });
+
+        // now, print the number to find:
+        p.textAlign(p.CENTER, p.CENTER);
+        p.text(`Is ${needleToFind} in the sorted list?`, 0, 250);
+
+        // Render high, wait 1 second
+        p.textAlign(p.LEFT, p.BASELINE);
+
+        if (!highLowMidCountState.highInitTime) {
+          highLowMidCountState.highInitTime = p.frameCount;
+        }
+
+        // When frame count shows ~1 second, set up low init time
+        if (
+          !highLowMidCountState.lowInitTime &&
+          p.frameCount - highLowMidCountState.highInitTime > 60
+        ) {
+          highLowMidCountState.lowInitTime = p.frameCount;
+        }
+
+        const BASELINE_Y_OFFSET = 70;
+
+        if (highLowMidCountState.highInitTime) {
+          const highXOffset = 10;
+          const highYOffset = BASELINE_Y_OFFSET;
+          p.text(
+            `HIGH: ${binarySearchState.high}`,
+            (-1 * p.width) / 2 + highXOffset,
+            (-1 * p.height) / 2 + highYOffset
+          );
+        }
+
+        if (highLowMidCountState.lowInitTime) {
+          const lowXOffset = 10;
+          const lowYOffset = BASELINE_Y_OFFSET + 50;
+          p.text(
+            `LOW: ${binarySearchState.low}`,
+            (-1 * p.width) / 2 + lowXOffset,
+            (-1 * p.height) / 2 + lowYOffset
+          );
+        }
       } else if (animationPhase === "END") {
         p.text("THE END!", 0, 0);
       } else {
@@ -222,13 +313,13 @@ function drawBox(
     { indices: [3, 2, 6, 7] }, // Bottom
   ];
 
-  for (let [i, face] of faces.entries()) {
+  for (let face of faces) {
     ctx.fill(...fillColor);
     ctx.stroke(...strokeColor);
     ctx.beginShape();
     for (let idx of face.indices) {
       const vec = vectors[idx];
-      ctx.vertex(vec.x, vec.y, vec.z, i % 2, Math.floor(i / 2));
+      ctx.vertex(vec.x, vec.y, vec.z);
     }
     ctx.endShape(ctx.CLOSE);
   }
@@ -237,3 +328,20 @@ function drawBox(
 window.debug = {};
 
 window.debug.getAnimationPhase = () => console.log(animationPhase);
+
+function createSquareOutline(
+  p: p5,
+  squareX: number,
+  squareY: number,
+  squareSize: number
+) {
+  // create box outline
+  p.fill(255, 255, 255, 0);
+  p.stroke(255, 0, 0, 255 * 0.8);
+  const BOX_BORDER_OFFSET = 5;
+  p.square(
+    squareX - BOX_BORDER_OFFSET,
+    squareY - BOX_BORDER_OFFSET,
+    squareSize + BOX_BORDER_OFFSET * 2
+  );
+}
