@@ -183,7 +183,7 @@ export const myp5 = new p5(function (p: p5) {
         window.alert(`unhandled animation state ${animationPhase}`);
       }
     },
-  } satisfies Partial<typeof p>);
+  } satisfies Pick<typeof p, "preload" | "setup" | "draw">);
 }, root);
 
 declare global {
