@@ -27,10 +27,30 @@ let animationPhase = "START" as
   | "SPIT_OUT_10"
   | "BS_HIGH_LOW_MID_CALC"
   | "BS_REVEAL_MID_AND_TRANSITION"
-  | "ADJUST_HIGH_LOW_MIDDLE"
+  | "ADJUST_HIGH_LOW"
+  | "ADJUST_HIGH_LOW_NUMS"
+  | "ADJUST_MID"
   | "END";
 
 const FRAME_RATE_LOCK = 60;
+
+/**
+ * Procedure containers allow us to handle certain things we want to include/exclude between basis by reference to an object.
+ * We can probably just have this assigned to bare variables, but this allows us to conveniently use `runAndStore`, below, to run
+ * then assign things to a given container (impossible with bare variables in a single statement)
+ */
+type ProcContainer = { proc: () => void };
+/** Take a callback, run it, then store it in a procedure container. */
+const runAndStoreProc = (
+  cb: () => void,
+  procContainer: ProcContainer
+): void => {
+  cb();
+  procContainer.proc = cb;
+};
+const runProcs = (...procs: ProcContainer[]): void => {
+  procs.forEach((p) => p.proc());
+};
 
 export const myp5 = new p5(function (p: p5) {
   let font: p5.Font;
@@ -49,8 +69,6 @@ export const myp5 = new p5(function (p: p5) {
     mid: 0,
   };
 
-  const prevProcedures: (() => void)[] = [];
-
   const needleToFind = (function () {
     const randomPresentValue =
       sortedNumbers[Math.floor(Math.random() * sortedNumbers.length)];
@@ -59,6 +77,42 @@ export const myp5 = new p5(function (p: p5) {
       ? getRandomPossibleNumber()
       : randomPresentValue;
   })();
+
+  const sortedNumberObjs = sortedNumbers.map((n) => ({
+    n,
+    posX: 0,
+    posY: 0,
+  }));
+
+  const outlineObjs = {
+    low: {
+      posX: 0,
+      posY: 0,
+    },
+    mid: {
+      posX: 0,
+      posY: 0,
+    },
+    high: {
+      posX: 0,
+      posY: 0,
+    },
+  };
+
+  const textHighLowMid = {
+    high: {
+      in: "",
+      out: "",
+    },
+    low: {
+      in: "",
+      out: "",
+    },
+    mid: {
+      in: "",
+      out: "",
+    },
+  } satisfies Record<string, { in: string; out: string }>;
 
   // SPAWN_RANDOM_NUMBERS state
   const spawnRandomNumbersFactories: {
@@ -71,13 +125,10 @@ export const myp5 = new p5(function (p: p5) {
   let spinNumbersFrameCount = 0;
 
   // SPIT_OUT_10 state
-  const sortedNumberObjs = sortedNumbers.map((n) => ({
-    n,
-    posX: 0,
-    posY: 0,
-  }));
-  // start at full alpha
-  let boxAlphaDecay = 255;
+  const spitOutTenSceneState = {
+    // start at full alpha
+    boxAlphaDecay: 255,
+  };
 
   // BS_HIGH_LOW_MID_CALC state
   const highLowMidCountState = {
@@ -91,8 +142,26 @@ export const myp5 = new p5(function (p: p5) {
     alphaTransitionPercent: 0,
   };
 
+  // ADJUST_HIGH_LOW_NUMS state
+  const adjustHighLowNumsState = {
+    alphaDecayHigh: 1,
+    alphaDecayMid: 1,
+    alphaDecayLow: 1,
+  };
+
+  const printSquaresAndIndexNumber: ProcContainer = { proc() {} };
+  const printNumberToFind: ProcContainer = { proc() {} };
+  const printHighIndexAndOutline: ProcContainer = { proc() {} };
+  const printLowIndexAndOutline: ProcContainer = { proc() {} };
+  const printMidIndexAndOutline: ProcContainer = { proc() {} };
+  const printNumberAtMid: ProcContainer = { proc() {} };
+
   // DEBUG: start phase; should be START in prod
   animationPhase = "SPIT_OUT_10";
+
+  const HIGH_COLOR = [0, 0, 0] as const;
+  const LOW_COLOR = [255, 255, 255] as const;
+  const MID_COLOR = [255, 0, 0, 255 / 2] as const;
 
   Object.assign(p, {
     preload() {
@@ -110,16 +179,7 @@ export const myp5 = new p5(function (p: p5) {
     draw() {
       // Execute procedures stored in previous stage
       p.background("skyblue");
-      prevProcedures.forEach((cb) => cb());
       p.orbitControl(); // helps with 'visual debugging', maybe turn off when done?
-
-      window.debug.prevProcedures = prevProcedures;
-
-      const storedProceduresForNextPhase: typeof prevProcedures = [];
-      const runAndStore = (cb: () => void): void => {
-        cb();
-        storedProceduresForNextPhase.push(cb);
-      };
 
       if (animationPhase === "START") {
         // Draw the square -- 'holds numbers'
@@ -184,7 +244,7 @@ export const myp5 = new p5(function (p: p5) {
         const BOX_SIZE = 50;
 
         p.textAlign(p.CENTER, p.CENTER);
-        p.fill(255, 255, 255, boxAlphaDecay);
+        p.fill(255, 255, 255, spitOutTenSceneState.boxAlphaDecay);
         p.text("Sorting...", 0, -100);
 
         p.push();
@@ -192,12 +252,12 @@ export const myp5 = new p5(function (p: p5) {
         drawBox(
           p,
           BOX_SIZE,
-          [255, 255, 255, boxAlphaDecay],
-          [0, 0, 0, boxAlphaDecay]
+          [255, 255, 255, spitOutTenSceneState.boxAlphaDecay],
+          [0, 0, 0, spitOutTenSceneState.boxAlphaDecay]
         );
         // decay fill
-        if (boxAlphaDecay > 0) {
-          boxAlphaDecay -= BOX_DECAY_SPEED;
+        if (spitOutTenSceneState.boxAlphaDecay > 0) {
+          spitOutTenSceneState.boxAlphaDecay -= BOX_DECAY_SPEED;
         }
         p.pop();
 
@@ -222,14 +282,13 @@ export const myp5 = new p5(function (p: p5) {
           );
         });
 
-        if (everythingInItsRightPlace && boxAlphaDecay <= 0) {
+        if (
+          everythingInItsRightPlace &&
+          spitOutTenSceneState.boxAlphaDecay <= 0
+        ) {
           animationPhase = "BS_HIGH_LOW_MID_CALC";
         }
       } else if (animationPhase === "BS_HIGH_LOW_MID_CALC") {
-        const HIGH_COLOR = [0, 0, 0] as const;
-        const LOW_COLOR = [255, 255, 255] as const;
-        const MID_COLOR = [255, 0, 0, 255 / 2] as const;
-
         // prepare the binary search initial state... (minor waste compute, who cares)
         binarySearchState.low = 0;
         binarySearchState.high = sortedNumbers.length - 1;
@@ -238,8 +297,8 @@ export const myp5 = new p5(function (p: p5) {
         );
 
         // Basic render details...
-        sortedNumberObjs.forEach((obj, idx) => {
-          runAndStore(() => {
+        runAndStoreProc(() => {
+          sortedNumberObjs.forEach((obj, idx) => {
             // square
             p.fill(0, 0, 0);
             p.stroke(0, 0, 0);
@@ -248,16 +307,16 @@ export const myp5 = new p5(function (p: p5) {
             // and their corresponding indices
             p.textAlign(p.CENTER, p.BASELINE);
             p.text(`${idx}`, obj.posX + 50 / 2, obj.posY + 100);
+            // maybe these draw steps should be encapsulated?
           });
-          // maybe these draw steps should be encapsulated?
-        });
+        }, printSquaresAndIndexNumber);
 
-        runAndStore(() => {
+        runAndStoreProc(() => {
           // now, print the number to find:
           p.stroke(255, 255, 255);
           p.textAlign(p.CENTER, p.CENTER);
           p.text(`Is ${needleToFind} in the sorted list?`, 0, 250);
-        });
+        }, printNumberToFind);
 
         if (!highLowMidCountState.highInitTime) {
           highLowMidCountState.highInitTime = p.frameCount;
@@ -267,13 +326,18 @@ export const myp5 = new p5(function (p: p5) {
         if (highLowMidCountState.highInitTime) {
           const highXOffset = 10;
           const highYOffset = BASELINE_Y_OFFSET;
+          outlineObjs.high = {
+            posX: sortedNumberObjs[binarySearchState.high].posX,
+            posY: sortedNumberObjs[binarySearchState.high].posY,
+          };
 
-          runAndStore(() => {
+          textHighLowMid.high.in = `${binarySearchState.high}`;
+          runAndStoreProc(() => {
             p.stroke(...HIGH_COLOR);
             p.fill(...HIGH_COLOR);
             p.textAlign(p.LEFT, p.BASELINE);
             p.text(
-              `HIGH: ${binarySearchState.high}`,
+              `HIGH: ${textHighLowMid.high.in}`,
               (-1 * p.width) / 2 + highXOffset,
               (-1 * p.height) / 2 + highYOffset
             );
@@ -282,11 +346,11 @@ export const myp5 = new p5(function (p: p5) {
             p.stroke(...HIGH_COLOR);
             createSquareOutline(
               p,
-              sortedNumberObjs[binarySearchState.high].posX,
-              sortedNumberObjs[binarySearchState.high].posY,
+              outlineObjs.high.posX,
+              outlineObjs.high.posY,
               50
             );
-          });
+          }, printHighIndexAndOutline);
         }
         // control 'waiting' for time since high time to show low
         if (
@@ -300,13 +364,18 @@ export const myp5 = new p5(function (p: p5) {
         if (highLowMidCountState.lowInitTime) {
           const lowXOffset = 10;
           const lowYOffset = BASELINE_Y_OFFSET + 70;
+          outlineObjs.low = {
+            posX: sortedNumberObjs[binarySearchState.low].posX,
+            posY: sortedNumberObjs[binarySearchState.low].posY,
+          };
+          textHighLowMid.low.in = `${binarySearchState.low}`;
 
-          runAndStore(() => {
+          runAndStoreProc(() => {
             p.stroke(...LOW_COLOR);
             p.fill(...LOW_COLOR);
             p.textAlign(p.LEFT, p.BASELINE);
             p.text(
-              `LOW: ${binarySearchState.low}`,
+              `LOW: ${textHighLowMid.low.in}`,
               (-1 * p.width) / 2 + lowXOffset,
               (-1 * p.height) / 2 + lowYOffset
             );
@@ -315,11 +384,11 @@ export const myp5 = new p5(function (p: p5) {
             p.stroke(...LOW_COLOR);
             createSquareOutline(
               p,
-              sortedNumberObjs[binarySearchState.low].posX,
-              sortedNumberObjs[binarySearchState.low].posY,
+              outlineObjs.low.posX,
+              outlineObjs.low.posY,
               50
             );
-          });
+          }, printLowIndexAndOutline);
         }
 
         // wait a second between low and mid
@@ -335,12 +404,19 @@ export const myp5 = new p5(function (p: p5) {
         if (highLowMidCountState.midInitTime) {
           const midXOffset = 10;
           const midYOffset = BASELINE_Y_OFFSET + 140;
-          runAndStore(() => {
+
+          outlineObjs.mid = {
+            posX: sortedNumberObjs[binarySearchState.mid].posX,
+            posY: sortedNumberObjs[binarySearchState.mid].posY,
+          };
+          textHighLowMid.mid.in = `${binarySearchState.mid}`;
+
+          runAndStoreProc(() => {
             p.stroke(...MID_COLOR);
             p.fill(...MID_COLOR);
             p.textAlign(p.LEFT, p.BASELINE);
             p.text(
-              `MID: ${binarySearchState.mid}`,
+              `MID: ${textHighLowMid.mid.in}`,
               (-1 * p.width) / 2 + midXOffset,
               (-1 * p.height) / 2 + midYOffset
             );
@@ -349,11 +425,11 @@ export const myp5 = new p5(function (p: p5) {
             p.fill(255, 255, 255, 0); // alpha 0, transparent
             createSquareOutline(
               p,
-              sortedNumberObjs[binarySearchState.mid].posX,
-              sortedNumberObjs[binarySearchState.mid].posY,
+              outlineObjs.mid.posX,
+              outlineObjs.mid.posY,
               50
             );
-          });
+          }, printMidIndexAndOutline);
         }
 
         // TRANSITION!
@@ -362,35 +438,209 @@ export const myp5 = new p5(function (p: p5) {
           p.frameCount - highLowMidCountState.midInitTime > 60
         ) {
           animationPhase = "BS_REVEAL_MID_AND_TRANSITION";
-          prevProcedures.length = 0;
-          storedProceduresForNextPhase.forEach((proc) => {
-            prevProcedures.push(proc);
-          });
         }
       } else if (animationPhase === "BS_REVEAL_MID_AND_TRANSITION") {
+        runProcs(
+          printHighIndexAndOutline,
+          printLowIndexAndOutline,
+          printMidIndexAndOutline,
+          printSquaresAndIndexNumber,
+          printNumberToFind
+        );
+
         const MID_REVEAL_NUMBER_VALUE_COLOR = [255, 255, 255] as const;
         // fade-in mid
         const midObj = sortedNumberObjs[binarySearchState.mid];
         if (bsRevealMidAndTransitionState.alphaTransitionPercent < 1) {
           bsRevealMidAndTransitionState.alphaTransitionPercent += 0.02;
         }
-        p.fill(
-          ...MID_REVEAL_NUMBER_VALUE_COLOR,
-          bsRevealMidAndTransitionState.alphaTransitionPercent * 255
-        );
-        p.textAlign(p.CENTER, p.CENTER);
-        p.text(`${midObj.n}`, midObj.posX + 50 / 2, midObj.posY + 50 / 2);
-        console.log(
-          "revealing",
-          midObj,
-          bsRevealMidAndTransitionState.alphaTransitionPercent
-        );
+
+        runAndStoreProc(() => {
+          p.fill(
+            ...MID_REVEAL_NUMBER_VALUE_COLOR,
+            bsRevealMidAndTransitionState.alphaTransitionPercent * 255
+          );
+          p.textAlign(p.CENTER, p.CENTER);
+          p.text(`${midObj.n}`, midObj.posX + 50 / 2, midObj.posY + 50 / 2);
+        }, printNumberAtMid);
 
         if (bsRevealMidAndTransitionState.alphaTransitionPercent >= 1) {
-          animationPhase = "ADJUST_HIGH_LOW_MIDDLE";
+          animationPhase = "ADJUST_HIGH_LOW";
         }
-      } else if (animationPhase === "ADJUST_HIGH_LOW_MIDDLE") {
-        window.alert("adjusting...");
+      } else if (animationPhase === "ADJUST_HIGH_LOW") {
+        runProcs(
+          printHighIndexAndOutline,
+          printLowIndexAndOutline,
+          printMidIndexAndOutline,
+          printSquaresAndIndexNumber,
+          printNumberToFind,
+          printNumberAtMid
+        );
+
+        const midObj = sortedNumberObjs[binarySearchState.mid];
+
+        let movingObj: { posX: number } | undefined;
+        let targetObj: { posX: number } | undefined;
+        if (midObj.n > needleToFind) {
+          binarySearchState.high = binarySearchState.mid - 1;
+          // move the outline
+          targetObj = sortedNumberObjs[binarySearchState.high];
+          movingObj = outlineObjs.high;
+          movingObj.posX = p.lerp(movingObj.posX, targetObj.posX, 0.05);
+        } else if (midObj.n < needleToFind) {
+          binarySearchState.low = binarySearchState.mid + 1;
+          // move the outline
+          targetObj = sortedNumberObjs[binarySearchState.low];
+          movingObj = outlineObjs.low;
+          movingObj.posX = p.lerp(movingObj.posX, targetObj.posX, 0.05);
+        } else if (midObj.n === needleToFind) {
+          window.alert("found it!"); // deal with this later
+          animationPhase = "END";
+          return;
+        }
+
+        assertPresent(movingObj);
+        assertPresent(targetObj);
+        if (isBasicallyEqual(targetObj.posX, movingObj.posX)) {
+          textHighLowMid.high.out = textHighLowMid.high.in;
+          textHighLowMid.low.out = textHighLowMid.low.in;
+          textHighLowMid.mid.out = textHighLowMid.mid.in;
+
+          // Transition them out, to be handled in the next animation phase...
+          textHighLowMid.high.in = `${binarySearchState.high}`;
+          textHighLowMid.low.in = `${binarySearchState.low}`;
+          textHighLowMid.mid.in = `${binarySearchState.mid}`;
+
+          animationPhase = "ADJUST_HIGH_LOW_NUMS";
+        }
+      } else if (animationPhase === "ADJUST_HIGH_LOW_NUMS") {
+        runProcs(
+          // printHighIndexAndOutline,
+          // printLowIndexAndOutline,
+          // printMidIndexAndOutline,
+          printSquaresAndIndexNumber,
+          printNumberToFind,
+          printNumberAtMid
+        );
+
+        const BASELINE_Y_OFFSET = 70;
+
+        // HANDLE HIGH
+        if (textHighLowMid.high.in !== textHighLowMid.high.out) {
+          const highXOffset = 10;
+          const highYOffset = BASELINE_Y_OFFSET;
+
+          p.stroke(...HIGH_COLOR);
+          p.fill(...HIGH_COLOR);
+          p.textAlign(p.LEFT, p.BASELINE);
+          p.text(
+            `HIGH: `,
+            (-1 * p.width) / 2 + highXOffset,
+            (-1 * p.height) / 2 + highYOffset
+          );
+
+          // Now, render the number in a decaying, spinny way
+          p.push();
+          // translate so that it rotates around correct origin point
+          p.translate(
+            (-1 * p.width) / 2 + highXOffset + 100,
+            (-1 * p.height) / 2 + highYOffset
+          );
+
+          if (adjustHighLowNumsState.alphaDecayHigh > 0) {
+            p.rotateY(p.frameCount * 0.225);
+          }
+
+          // text high out
+          p.fill(...HIGH_COLOR, adjustHighLowNumsState.alphaDecayHigh * 255);
+          p.text(textHighLowMid.high.out, 0, 0);
+
+          // text high in
+          p.fill(
+            ...HIGH_COLOR,
+            255 * 1 - adjustHighLowNumsState.alphaDecayHigh
+          );
+          p.text(textHighLowMid.high.in, 0, 0);
+          p.pop();
+
+          // adjust decay
+          if (adjustHighLowNumsState.alphaDecayHigh > 0) {
+            adjustHighLowNumsState.alphaDecayHigh -= 0.02;
+          }
+
+          p.fill(255, 255, 255, 0); // alpha 0, transparent
+          createSquareOutline(
+            p,
+            outlineObjs.high.posX,
+            outlineObjs.high.posY,
+            50
+          );
+
+          // run other numbers as-is
+          runProcs(printLowIndexAndOutline, printMidIndexAndOutline);
+        }
+
+        // HANDLE LOW
+        if (textHighLowMid.low.in !== textHighLowMid.low.out) {
+          const highXOffset = 10;
+          const highYOffset = BASELINE_Y_OFFSET;
+
+          p.stroke(...HIGH_COLOR);
+          p.fill(...HIGH_COLOR);
+          p.textAlign(p.LEFT, p.BASELINE);
+          p.text(
+            `HIGH: `,
+            (-1 * p.width) / 2 + highXOffset,
+            (-1 * p.height) / 2 + highYOffset
+          );
+
+          // Now, render the number in a decaying, spinny way
+          p.push();
+          // translate so that it rotates around correct origin point
+          p.translate(
+            (-1 * p.width) / 2 + highXOffset + 100,
+            (-1 * p.height) / 2 + highYOffset
+          );
+
+          if (adjustHighLowNumsState.alphaDecayHigh > 0) {
+            p.rotateY(p.frameCount * 0.225);
+          }
+
+          // text high out
+          p.fill(...HIGH_COLOR, adjustHighLowNumsState.alphaDecayHigh * 255);
+          p.text(textHighLowMid.high.out, 0, 0);
+
+          // text high in
+          p.fill(
+            ...HIGH_COLOR,
+            255 * 1 - adjustHighLowNumsState.alphaDecayHigh
+          );
+          p.text(textHighLowMid.high.in, 0, 0);
+          p.pop();
+
+          // adjust decay
+          if (adjustHighLowNumsState.alphaDecayHigh > 0) {
+            adjustHighLowNumsState.alphaDecayHigh -= 0.02;
+          }
+
+          p.fill(255, 255, 255, 0); // alpha 0, transparent
+          createSquareOutline(
+            p,
+            outlineObjs.high.posX,
+            outlineObjs.high.posY,
+            50
+          );
+
+          // run other numbers as-is
+          runProcs(printHighIndexAndOutline, printMidIndexAndOutline);
+        }
+
+        if (adjustHighLowNumsState.alphaDecayHigh <= 0) {
+          // set the values back to re-align
+          textHighLowMid.high.out = textHighLowMid.high.in;
+          textHighLowMid.low.out = textHighLowMid.low.in;
+          // animationPhase = "END"; // actually, 'ADJUST_MID'
+        }
       } else if (animationPhase === "END") {
         p.text("THE END!", 0, 0);
       } else {
@@ -465,4 +715,10 @@ function createSquareOutline(
     squareY - BOX_BORDER_OFFSET,
     squareSize + BOX_BORDER_OFFSET * 2
   );
+}
+
+function assertPresent<T>(v: T): asserts v is NonNullable<T> {
+  if (v == null) {
+    throw new Error("Expected value to be non-nullish");
+  }
 }
