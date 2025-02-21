@@ -26,6 +26,8 @@ let animationPhase = "START" as
   | "SPIN_NUMBERS_SPINNING"
   | "SPIT_OUT_10"
   | "BS_HIGH_LOW_MID_CALC"
+  | "BS_REVEAL_MID_AND_TRANSITION"
+  | "ADJUST_HIGH_LOW_MIDDLE"
   | "END";
 
 const FRAME_RATE_LOCK = 60;
@@ -46,6 +48,8 @@ export const myp5 = new p5(function (p: p5) {
     high: 0,
     mid: 0,
   };
+
+  const prevProcedures: (() => void)[] = [];
 
   const needleToFind = (function () {
     const randomPresentValue =
@@ -79,10 +83,16 @@ export const myp5 = new p5(function (p: p5) {
   const highLowMidCountState = {
     highInitTime: 0,
     lowInitTime: 0,
+    midInitTime: 0,
+  };
+
+  // BS_REVEAL_MID_AND_TRANSITION state
+  const bsRevealMidAndTransitionState = {
+    alphaTransitionPercent: 0,
   };
 
   // DEBUG: start phase; should be START in prod
-  animationPhase = "BS_HIGH_LOW_MID_CALC";
+  animationPhase = "SPIT_OUT_10";
 
   Object.assign(p, {
     preload() {
@@ -98,8 +108,18 @@ export const myp5 = new p5(function (p: p5) {
       p.textSize(36);
     },
     draw() {
+      // Execute procedures stored in previous stage
       p.background("skyblue");
+      prevProcedures.forEach((cb) => cb());
       p.orbitControl(); // helps with 'visual debugging', maybe turn off when done?
+
+      window.debug.prevProcedures = prevProcedures;
+
+      const storedProceduresForNextPhase: typeof prevProcedures = [];
+      const runAndStore = (cb: () => void): void => {
+        cb();
+        storedProceduresForNextPhase.push(cb);
+      };
 
       if (animationPhase === "START") {
         // Draw the square -- 'holds numbers'
@@ -193,21 +213,23 @@ export const myp5 = new p5(function (p: p5) {
           p.fill(0, 0, 0);
           p.square(num.posX, num.posY, 50);
           p.pop();
-
-          const everythingInItsRightPlace = sortedNumberObjs.every(
-            (obj, idx) => {
-              return (
-                isBasicallyEqual(obj.posX, getTargetX(idx)) &&
-                isBasicallyEqual(obj.posY, getTargetY(idx))
-              );
-            }
-          );
-
-          if (everythingInItsRightPlace && boxAlphaDecay <= 0) {
-            animationPhase = "BS_HIGH_LOW_MID_CALC";
-          }
         });
+
+        const everythingInItsRightPlace = sortedNumberObjs.every((obj, idx) => {
+          return (
+            isBasicallyEqual(obj.posX, getTargetX(idx)) &&
+            isBasicallyEqual(obj.posY, getTargetY(idx))
+          );
+        });
+
+        if (everythingInItsRightPlace && boxAlphaDecay <= 0) {
+          animationPhase = "BS_HIGH_LOW_MID_CALC";
+        }
       } else if (animationPhase === "BS_HIGH_LOW_MID_CALC") {
+        const HIGH_COLOR = [0, 0, 0] as const;
+        const LOW_COLOR = [255, 255, 255] as const;
+        const MID_COLOR = [255, 0, 0, 255 / 2] as const;
+
         // prepare the binary search initial state... (minor waste compute, who cares)
         binarySearchState.low = 0;
         binarySearchState.high = sortedNumbers.length - 1;
@@ -217,57 +239,158 @@ export const myp5 = new p5(function (p: p5) {
 
         // Basic render details...
         sortedNumberObjs.forEach((obj, idx) => {
+          runAndStore(() => {
+            // square
+            p.fill(0, 0, 0);
+            p.stroke(0, 0, 0);
+            p.square(obj.posX, obj.posY, 50);
+
+            // and their corresponding indices
+            p.textAlign(p.CENTER, p.BASELINE);
+            p.text(`${idx}`, obj.posX + 50 / 2, obj.posY + 100);
+          });
           // maybe these draw steps should be encapsulated?
-
-          // square
-          p.fill(0, 0, 0);
-          p.square(obj.posX, obj.posY, 50);
-
-          // and their corresponding indices
-          p.textAlign(p.CENTER, p.BASELINE);
-          p.text(`${idx}`, obj.posX + 50 / 2, obj.posY + 100);
         });
 
-        // now, print the number to find:
-        p.textAlign(p.CENTER, p.CENTER);
-        p.text(`Is ${needleToFind} in the sorted list?`, 0, 250);
-
-        // Render high, wait 1 second
-        p.textAlign(p.LEFT, p.BASELINE);
+        runAndStore(() => {
+          // now, print the number to find:
+          p.stroke(255, 255, 255);
+          p.textAlign(p.CENTER, p.CENTER);
+          p.text(`Is ${needleToFind} in the sorted list?`, 0, 250);
+        });
 
         if (!highLowMidCountState.highInitTime) {
           highLowMidCountState.highInitTime = p.frameCount;
         }
 
-        // When frame count shows ~1 second, set up low init time
+        const BASELINE_Y_OFFSET = 70;
+        if (highLowMidCountState.highInitTime) {
+          const highXOffset = 10;
+          const highYOffset = BASELINE_Y_OFFSET;
+
+          runAndStore(() => {
+            p.stroke(...HIGH_COLOR);
+            p.fill(...HIGH_COLOR);
+            p.textAlign(p.LEFT, p.BASELINE);
+            p.text(
+              `HIGH: ${binarySearchState.high}`,
+              (-1 * p.width) / 2 + highXOffset,
+              (-1 * p.height) / 2 + highYOffset
+            );
+
+            p.fill(255, 255, 255, 0); // alpha 0, transparent
+            p.stroke(...HIGH_COLOR);
+            createSquareOutline(
+              p,
+              sortedNumberObjs[binarySearchState.high].posX,
+              sortedNumberObjs[binarySearchState.high].posY,
+              50
+            );
+          });
+        }
+        // control 'waiting' for time since high time to show low
         if (
           !highLowMidCountState.lowInitTime &&
+          // When frame count shows ~1 second, set up low init time
           p.frameCount - highLowMidCountState.highInitTime > 60
         ) {
           highLowMidCountState.lowInitTime = p.frameCount;
         }
 
-        const BASELINE_Y_OFFSET = 70;
-
-        if (highLowMidCountState.highInitTime) {
-          const highXOffset = 10;
-          const highYOffset = BASELINE_Y_OFFSET;
-          p.text(
-            `HIGH: ${binarySearchState.high}`,
-            (-1 * p.width) / 2 + highXOffset,
-            (-1 * p.height) / 2 + highYOffset
-          );
-        }
-
         if (highLowMidCountState.lowInitTime) {
           const lowXOffset = 10;
-          const lowYOffset = BASELINE_Y_OFFSET + 50;
-          p.text(
-            `LOW: ${binarySearchState.low}`,
-            (-1 * p.width) / 2 + lowXOffset,
-            (-1 * p.height) / 2 + lowYOffset
-          );
+          const lowYOffset = BASELINE_Y_OFFSET + 70;
+
+          runAndStore(() => {
+            p.stroke(...LOW_COLOR);
+            p.fill(...LOW_COLOR);
+            p.textAlign(p.LEFT, p.BASELINE);
+            p.text(
+              `LOW: ${binarySearchState.low}`,
+              (-1 * p.width) / 2 + lowXOffset,
+              (-1 * p.height) / 2 + lowYOffset
+            );
+
+            p.fill(255, 255, 255, 0); // alpha 0, transparent
+            p.stroke(...LOW_COLOR);
+            createSquareOutline(
+              p,
+              sortedNumberObjs[binarySearchState.low].posX,
+              sortedNumberObjs[binarySearchState.low].posY,
+              50
+            );
+          });
         }
+
+        // wait a second between low and mid
+        // this is getting cumbersome, what's another way to sequence this? 🤔
+        if (
+          !highLowMidCountState.midInitTime &&
+          highLowMidCountState.lowInitTime &&
+          p.frameCount - highLowMidCountState.lowInitTime > 60
+        ) {
+          highLowMidCountState.midInitTime = p.frameCount;
+        }
+
+        if (highLowMidCountState.midInitTime) {
+          const midXOffset = 10;
+          const midYOffset = BASELINE_Y_OFFSET + 140;
+          runAndStore(() => {
+            p.stroke(...MID_COLOR);
+            p.fill(...MID_COLOR);
+            p.textAlign(p.LEFT, p.BASELINE);
+            p.text(
+              `MID: ${binarySearchState.mid}`,
+              (-1 * p.width) / 2 + midXOffset,
+              (-1 * p.height) / 2 + midYOffset
+            );
+
+            p.stroke(...MID_COLOR);
+            p.fill(255, 255, 255, 0); // alpha 0, transparent
+            createSquareOutline(
+              p,
+              sortedNumberObjs[binarySearchState.mid].posX,
+              sortedNumberObjs[binarySearchState.mid].posY,
+              50
+            );
+          });
+        }
+
+        // TRANSITION!
+        if (
+          highLowMidCountState.midInitTime &&
+          p.frameCount - highLowMidCountState.midInitTime > 60
+        ) {
+          animationPhase = "BS_REVEAL_MID_AND_TRANSITION";
+          prevProcedures.length = 0;
+          storedProceduresForNextPhase.forEach((proc) => {
+            prevProcedures.push(proc);
+          });
+        }
+      } else if (animationPhase === "BS_REVEAL_MID_AND_TRANSITION") {
+        const MID_REVEAL_NUMBER_VALUE_COLOR = [255, 255, 255] as const;
+        // fade-in mid
+        const midObj = sortedNumberObjs[binarySearchState.mid];
+        if (bsRevealMidAndTransitionState.alphaTransitionPercent < 1) {
+          bsRevealMidAndTransitionState.alphaTransitionPercent += 0.02;
+        }
+        p.fill(
+          ...MID_REVEAL_NUMBER_VALUE_COLOR,
+          bsRevealMidAndTransitionState.alphaTransitionPercent * 255
+        );
+        p.textAlign(p.CENTER, p.CENTER);
+        p.text(`${midObj.n}`, midObj.posX + 50 / 2, midObj.posY + 50 / 2);
+        console.log(
+          "revealing",
+          midObj,
+          bsRevealMidAndTransitionState.alphaTransitionPercent
+        );
+
+        if (bsRevealMidAndTransitionState.alphaTransitionPercent >= 1) {
+          animationPhase = "ADJUST_HIGH_LOW_MIDDLE";
+        }
+      } else if (animationPhase === "ADJUST_HIGH_LOW_MIDDLE") {
+        window.alert("adjusting...");
       } else if (animationPhase === "END") {
         p.text("THE END!", 0, 0);
       } else {
@@ -327,7 +450,7 @@ function drawBox(
 
 window.debug = {};
 
-window.debug.getAnimationPhase = () => console.log(animationPhase);
+window.debug.getAnimationPhase = () => animationPhase;
 
 function createSquareOutline(
   p: p5,
@@ -336,8 +459,6 @@ function createSquareOutline(
   squareSize: number
 ) {
   // create box outline
-  p.fill(255, 255, 255, 0);
-  p.stroke(255, 0, 0, 255 * 0.8);
   const BOX_BORDER_OFFSET = 5;
   p.square(
     squareX - BOX_BORDER_OFFSET,
