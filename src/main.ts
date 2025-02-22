@@ -173,7 +173,10 @@ export const myp5 = new p5(function (p: p5) {
   Object.assign(p, {
     preload() {
       // can preload assets here...
-      font = p.loadFont("/public/fonts/inconsolata.otf");
+      console.log("url", import.meta.url);
+      font = p.loadFont(
+        new URL("/public/fonts/inconsolata.otf", import.meta.url).href
+      );
     },
     setup() {
       p.frameRate(FRAME_RATE_LOCK);
