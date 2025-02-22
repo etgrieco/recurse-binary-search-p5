@@ -71,6 +71,8 @@ export const myp5 = new p5(function (p: p5) {
   };
 
   const needleToFind = (function () {
+    // TODO: REMOVE ME
+    return sortedNumbers[8];
     const randomPresentValue =
       sortedNumbers[Math.floor(Math.random() * sortedNumbers.length)];
     const shouldUseFoundNeedle = Math.random() > 0.1; // ~10% of the time, turn up empty
@@ -145,9 +147,12 @@ export const myp5 = new p5(function (p: p5) {
 
   // ADJUST_HIGH_LOW_NUMS state
   const adjustHighLowNumsState = {
-    alphaDecayHigh: 1,
+    alphaDecayHighLow: 1,
+  };
+
+  // ADJUST_MID_NUMS state
+  const adjustMidNumsState = {
     alphaDecayMid: 1,
-    alphaDecayLow: 1,
   };
 
   const printSquaresAndIndexNumber: ProcContainer = { proc() {} };
@@ -295,7 +300,7 @@ export const myp5 = new p5(function (p: p5) {
         binarySearchState.low = 0;
         binarySearchState.high = sortedNumbers.length - 1;
         binarySearchState.mid = Math.floor(
-          (binarySearchState.high - binarySearchState.low) / 2
+          (binarySearchState.high + binarySearchState.low) / 2
         );
 
         // Basic render details...
@@ -503,6 +508,9 @@ export const myp5 = new p5(function (p: p5) {
         assertPresent(movingObj);
         assertPresent(targetObj);
         if (isBasicallyEqual(targetObj.posX, movingObj.posX)) {
+          // cleanup
+          bsRevealMidAndTransitionState.alphaTransitionPercent = 0;
+
           textHighLowMid.high.out = textHighLowMid.high.in;
           textHighLowMid.low.out = textHighLowMid.low.in;
           textHighLowMid.mid.out = textHighLowMid.mid.in;
@@ -542,25 +550,25 @@ export const myp5 = new p5(function (p: p5) {
             (-1 * p.height) / 2 + highYOffset
           );
 
-          if (adjustHighLowNumsState.alphaDecayHigh > 0) {
+          if (adjustHighLowNumsState.alphaDecayHighLow > 0) {
             p.rotateY(p.frameCount * 0.225);
           }
 
           // text high out
-          p.fill(...HIGH_COLOR, adjustHighLowNumsState.alphaDecayHigh * 255);
+          p.fill(...HIGH_COLOR, adjustHighLowNumsState.alphaDecayHighLow * 255);
           p.text(textHighLowMid.high.out, 0, 0);
 
           // text high in
           p.fill(
             ...HIGH_COLOR,
-            255 * 1 - adjustHighLowNumsState.alphaDecayHigh
+            255 * 1 - adjustHighLowNumsState.alphaDecayHighLow
           );
           p.text(textHighLowMid.high.in, 0, 0);
           p.pop();
 
           // adjust decay
-          if (adjustHighLowNumsState.alphaDecayHigh > 0) {
-            adjustHighLowNumsState.alphaDecayHigh -= 0.02;
+          if (adjustHighLowNumsState.alphaDecayHighLow > 0) {
+            adjustHighLowNumsState.alphaDecayHighLow -= 0.02;
           }
 
           p.push();
@@ -600,22 +608,25 @@ export const myp5 = new p5(function (p: p5) {
             (-1 * p.height) / 2 + lowYOffset
           );
 
-          if (adjustHighLowNumsState.alphaDecayHigh > 0) {
+          if (adjustHighLowNumsState.alphaDecayHighLow > 0) {
             p.rotateY(p.frameCount * 0.225);
           }
 
           // text low out
-          p.fill(...LOW_COLOR, adjustHighLowNumsState.alphaDecayHigh * 255);
+          p.fill(...LOW_COLOR, adjustHighLowNumsState.alphaDecayHighLow * 255);
           p.text(textHighLowMid.low.out, 0, 0);
 
           // text low in
-          p.fill(...LOW_COLOR, 255 * 1 - adjustHighLowNumsState.alphaDecayHigh);
+          p.fill(
+            ...LOW_COLOR,
+            255 * 1 - adjustHighLowNumsState.alphaDecayHighLow
+          );
           p.text(textHighLowMid.low.in, 0, 0);
           p.pop();
 
           // adjust decay
-          if (adjustHighLowNumsState.alphaDecayHigh > 0) {
-            adjustHighLowNumsState.alphaDecayHigh -= 0.02;
+          if (adjustHighLowNumsState.alphaDecayHighLow > 0) {
+            adjustHighLowNumsState.alphaDecayHighLow -= 0.02;
           }
 
           p.push();
@@ -633,17 +644,17 @@ export const myp5 = new p5(function (p: p5) {
           runProcs(printHighIndexAndOutline, printMidIndexAndOutline);
         }
 
-        if (adjustHighLowNumsState.alphaDecayHigh <= 0) {
+        if (adjustHighLowNumsState.alphaDecayHighLow <= 0) {
           // set the values back to re-align
           textHighLowMid.high.out = textHighLowMid.high.in;
           textHighLowMid.low.out = textHighLowMid.low.in;
           // reset alpha decay for next time
-          adjustHighLowNumsState.alphaDecayHigh = 1;
+          adjustHighLowNumsState.alphaDecayHighLow = 1;
           animationPhase = "ADJUST_MID";
         }
       } else if (animationPhase === "ADJUST_MID") {
         binarySearchState.mid = Math.floor(
-          (binarySearchState.high - binarySearchState.low) / 2
+          (binarySearchState.high + binarySearchState.low) / 2
         );
 
         runProcs(
@@ -698,22 +709,22 @@ export const myp5 = new p5(function (p: p5) {
           (-1 * p.height) / 2 + midYOffset
         );
 
-        if (adjustHighLowNumsState.alphaDecayHigh > 0) {
+        if (adjustMidNumsState.alphaDecayMid > 0) {
           p.rotateY(p.frameCount * 0.225);
         }
 
         // text mid out
-        p.fill(...MID_COLOR, adjustHighLowNumsState.alphaDecayHigh * 255);
+        p.fill(...MID_COLOR, adjustMidNumsState.alphaDecayMid * 255);
         p.text(textHighLowMid.mid.out, 0, 0);
 
         // text mid in
-        p.fill(...MID_COLOR, 255 * 1 - adjustHighLowNumsState.alphaDecayHigh);
+        p.fill(...MID_COLOR, 255 * 1 - adjustMidNumsState.alphaDecayMid);
         p.text(textHighLowMid.mid.in, 0, 0);
         p.pop();
 
         // adjust decay
-        if (adjustHighLowNumsState.alphaDecayHigh > 0) {
-          adjustHighLowNumsState.alphaDecayHigh -= 0.02;
+        if (adjustMidNumsState.alphaDecayMid > 0) {
+          adjustMidNumsState.alphaDecayMid -= 0.02;
         }
 
         p.push();
@@ -721,6 +732,13 @@ export const myp5 = new p5(function (p: p5) {
         p.fill(255, 255, 255, 0); // alpha 0, transparent
         createSquareOutline(p, outlineObjs.mid.posX, outlineObjs.mid.posY, 50);
         p.pop();
+
+        if (adjustMidNumsState.alphaDecayMid <= 0) {
+          // Adjust alpha decay for next time
+          adjustMidNumsState.alphaDecayMid = 1;
+          // Re-calc, then start loop again
+          animationPhase = "BS_REVEAL_MID_AND_TRANSITION";
+        }
       } else if (animationPhase === "END") {
         p.text("THE END!", 0, 0);
       } else {
