@@ -175,7 +175,7 @@ export const myp5 = new p5(function (p: p5) {
       // can preload assets here...
       console.log("url", import.meta.url);
       font = p.loadFont(
-        new URL("@fonts/inconsolata.otf", import.meta.url).href
+        new URL("/public/fonts/inconsolata.otf", import.meta.url).href
       );
     },
     setup() {
