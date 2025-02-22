@@ -18,10 +18,16 @@ jobs:
       group: ${{ github.workflow }}-${{ github.ref }}
     steps:
       - uses: actions/checkout@v4
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
       - name: Setup Node
         uses: actions/setup-node@v4 # this handles caching for me!
         with:
-          node-version: '18'
+          node-version: '20'
+          cache: 'pnpm'
 
       - run: pnpm install
       - run: pnpm run build
