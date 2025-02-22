@@ -30,6 +30,7 @@ let animationPhase = "START" as
   | "ADJUST_HIGH_LOW"
   | "ADJUST_HIGH_LOW_NUMS"
   | "ADJUST_MID"
+  | "ADJUST_MID_NUM"
   | "END";
 
 const FRAME_RATE_LOCK = 60;
@@ -161,7 +162,8 @@ export const myp5 = new p5(function (p: p5) {
 
   const HIGH_COLOR = [0, 0, 0] as const;
   const LOW_COLOR = [255, 255, 255] as const;
-  const MID_COLOR = [255, 0, 0, 255 / 2] as const;
+  const MID_COLOR = [255, 0, 0] as const;
+  const BASELINE_Y_HIGHLOWMID_OFFSET = 70;
 
   Object.assign(p, {
     preload() {
@@ -322,10 +324,9 @@ export const myp5 = new p5(function (p: p5) {
           highLowMidCountState.highInitTime = p.frameCount;
         }
 
-        const BASELINE_Y_OFFSET = 70;
         if (highLowMidCountState.highInitTime) {
           const highXOffset = 10;
-          const highYOffset = BASELINE_Y_OFFSET;
+          const highYOffset = BASELINE_Y_HIGHLOWMID_OFFSET;
           outlineObjs.high = {
             posX: sortedNumberObjs[binarySearchState.high].posX,
             posY: sortedNumberObjs[binarySearchState.high].posY,
@@ -363,7 +364,7 @@ export const myp5 = new p5(function (p: p5) {
 
         if (highLowMidCountState.lowInitTime) {
           const lowXOffset = 10;
-          const lowYOffset = BASELINE_Y_OFFSET + 70;
+          const lowYOffset = BASELINE_Y_HIGHLOWMID_OFFSET + 70;
           outlineObjs.low = {
             posX: sortedNumberObjs[binarySearchState.low].posX,
             posY: sortedNumberObjs[binarySearchState.low].posY,
@@ -403,7 +404,7 @@ export const myp5 = new p5(function (p: p5) {
 
         if (highLowMidCountState.midInitTime) {
           const midXOffset = 10;
-          const midYOffset = BASELINE_Y_OFFSET + 140;
+          const midYOffset = BASELINE_Y_HIGHLOWMID_OFFSET + 140;
 
           outlineObjs.mid = {
             posX: sortedNumberObjs[binarySearchState.mid].posX,
@@ -509,26 +510,20 @@ export const myp5 = new p5(function (p: p5) {
           // Transition them out, to be handled in the next animation phase...
           textHighLowMid.high.in = `${binarySearchState.high}`;
           textHighLowMid.low.in = `${binarySearchState.low}`;
-          textHighLowMid.mid.in = `${binarySearchState.mid}`;
 
           animationPhase = "ADJUST_HIGH_LOW_NUMS";
         }
       } else if (animationPhase === "ADJUST_HIGH_LOW_NUMS") {
         runProcs(
-          // printHighIndexAndOutline,
-          // printLowIndexAndOutline,
-          // printMidIndexAndOutline,
           printSquaresAndIndexNumber,
           printNumberToFind,
           printNumberAtMid
         );
 
-        const BASELINE_Y_OFFSET = 70;
-
         // HANDLE HIGH
         if (textHighLowMid.high.in !== textHighLowMid.high.out) {
           const highXOffset = 10;
-          const highYOffset = BASELINE_Y_OFFSET;
+          const highYOffset = BASELINE_Y_HIGHLOWMID_OFFSET;
 
           p.stroke(...HIGH_COLOR);
           p.fill(...HIGH_COLOR);
@@ -568,6 +563,8 @@ export const myp5 = new p5(function (p: p5) {
             adjustHighLowNumsState.alphaDecayHigh -= 0.02;
           }
 
+          p.push();
+          // restore creating the outline part
           p.fill(255, 255, 255, 0); // alpha 0, transparent
           createSquareOutline(
             p,
@@ -575,6 +572,7 @@ export const myp5 = new p5(function (p: p5) {
             outlineObjs.high.posY,
             50
           );
+          p.pop();
 
           // run other numbers as-is
           runProcs(printLowIndexAndOutline, printMidIndexAndOutline);
@@ -582,40 +580,37 @@ export const myp5 = new p5(function (p: p5) {
 
         // HANDLE LOW
         if (textHighLowMid.low.in !== textHighLowMid.low.out) {
-          const highXOffset = 10;
-          const highYOffset = BASELINE_Y_OFFSET;
+          const lowXOffset = 10;
+          const lowYOffset = BASELINE_Y_HIGHLOWMID_OFFSET + 70;
 
-          p.stroke(...HIGH_COLOR);
-          p.fill(...HIGH_COLOR);
+          p.stroke(...LOW_COLOR);
+          p.fill(...LOW_COLOR);
           p.textAlign(p.LEFT, p.BASELINE);
           p.text(
-            `HIGH: `,
-            (-1 * p.width) / 2 + highXOffset,
-            (-1 * p.height) / 2 + highYOffset
+            `LOW: `,
+            (-1 * p.width) / 2 + lowXOffset,
+            (-1 * p.height) / 2 + lowYOffset
           );
 
           // Now, render the number in a decaying, spinny way
           p.push();
           // translate so that it rotates around correct origin point
           p.translate(
-            (-1 * p.width) / 2 + highXOffset + 100,
-            (-1 * p.height) / 2 + highYOffset
+            (-1 * p.width) / 2 + lowXOffset + 100,
+            (-1 * p.height) / 2 + lowYOffset
           );
 
           if (adjustHighLowNumsState.alphaDecayHigh > 0) {
             p.rotateY(p.frameCount * 0.225);
           }
 
-          // text high out
-          p.fill(...HIGH_COLOR, adjustHighLowNumsState.alphaDecayHigh * 255);
-          p.text(textHighLowMid.high.out, 0, 0);
+          // text low out
+          p.fill(...LOW_COLOR, adjustHighLowNumsState.alphaDecayHigh * 255);
+          p.text(textHighLowMid.low.out, 0, 0);
 
-          // text high in
-          p.fill(
-            ...HIGH_COLOR,
-            255 * 1 - adjustHighLowNumsState.alphaDecayHigh
-          );
-          p.text(textHighLowMid.high.in, 0, 0);
+          // text low in
+          p.fill(...LOW_COLOR, 255 * 1 - adjustHighLowNumsState.alphaDecayHigh);
+          p.text(textHighLowMid.low.in, 0, 0);
           p.pop();
 
           // adjust decay
@@ -623,13 +618,16 @@ export const myp5 = new p5(function (p: p5) {
             adjustHighLowNumsState.alphaDecayHigh -= 0.02;
           }
 
+          p.push();
+          // restore creating the outline part
           p.fill(255, 255, 255, 0); // alpha 0, transparent
           createSquareOutline(
             p,
-            outlineObjs.high.posX,
-            outlineObjs.high.posY,
+            outlineObjs.low.posX,
+            outlineObjs.low.posY,
             50
           );
+          p.pop();
 
           // run other numbers as-is
           runProcs(printHighIndexAndOutline, printMidIndexAndOutline);
@@ -639,8 +637,90 @@ export const myp5 = new p5(function (p: p5) {
           // set the values back to re-align
           textHighLowMid.high.out = textHighLowMid.high.in;
           textHighLowMid.low.out = textHighLowMid.low.in;
-          // animationPhase = "END"; // actually, 'ADJUST_MID'
+          // reset alpha decay for next time
+          adjustHighLowNumsState.alphaDecayHigh = 1;
+          animationPhase = "ADJUST_MID";
         }
+      } else if (animationPhase === "ADJUST_MID") {
+        binarySearchState.mid = Math.floor(
+          (binarySearchState.high - binarySearchState.low) / 2
+        );
+
+        runProcs(
+          printHighIndexAndOutline,
+          printLowIndexAndOutline,
+          printMidIndexAndOutline,
+          printSquaresAndIndexNumber,
+          printNumberToFind,
+          printNumberAtMid
+        );
+
+        // do an outline move...
+        let movingObj: { posX: number } | undefined;
+        let targetObj: { posX: number } | undefined;
+        // move the outline
+        targetObj = sortedNumberObjs[binarySearchState.mid];
+        movingObj = outlineObjs.mid;
+        movingObj.posX = p.lerp(movingObj.posX, targetObj.posX, 0.05);
+
+        if (isBasicallyEqual(targetObj.posX, movingObj.posX)) {
+          animationPhase = "ADJUST_MID_NUM";
+          // Get mid ready for num transition
+          textHighLowMid.mid.in = `${binarySearchState.mid}`;
+        }
+      } else if (animationPhase === "ADJUST_MID_NUM") {
+        runProcs(
+          printHighIndexAndOutline,
+          printLowIndexAndOutline,
+          printSquaresAndIndexNumber,
+          printNumberToFind,
+          printNumberAtMid
+        );
+
+        const midXOffset = 10;
+        const midYOffset = BASELINE_Y_HIGHLOWMID_OFFSET + 140;
+
+        // Handle MID
+        p.stroke(...MID_COLOR);
+        p.fill(...MID_COLOR);
+        p.textAlign(p.LEFT, p.BASELINE);
+        p.text(
+          `MID: `,
+          (-1 * p.width) / 2 + midXOffset,
+          (-1 * p.height) / 2 + midYOffset
+        );
+
+        // Now, render the number in a decaying, spinny way
+        p.push();
+        // translate so that it rotates around correct origin point
+        p.translate(
+          (-1 * p.width) / 2 + midXOffset + 100,
+          (-1 * p.height) / 2 + midYOffset
+        );
+
+        if (adjustHighLowNumsState.alphaDecayHigh > 0) {
+          p.rotateY(p.frameCount * 0.225);
+        }
+
+        // text mid out
+        p.fill(...MID_COLOR, adjustHighLowNumsState.alphaDecayHigh * 255);
+        p.text(textHighLowMid.mid.out, 0, 0);
+
+        // text mid in
+        p.fill(...MID_COLOR, 255 * 1 - adjustHighLowNumsState.alphaDecayHigh);
+        p.text(textHighLowMid.mid.in, 0, 0);
+        p.pop();
+
+        // adjust decay
+        if (adjustHighLowNumsState.alphaDecayHigh > 0) {
+          adjustHighLowNumsState.alphaDecayHigh -= 0.02;
+        }
+
+        p.push();
+        // restore creating the outline part
+        p.fill(255, 255, 255, 0); // alpha 0, transparent
+        createSquareOutline(p, outlineObjs.mid.posX, outlineObjs.mid.posY, 50);
+        p.pop();
       } else if (animationPhase === "END") {
         p.text("THE END!", 0, 0);
       } else {
