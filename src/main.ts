@@ -322,7 +322,7 @@ export const myp5 = new p5(function (p: p5) {
           // now, print the number to find:
           p.stroke(255, 255, 255);
           p.textAlign(p.CENTER, p.CENTER);
-          p.text(`Is ${needleToFind} in the sorted list?`, 0, 250);
+          p.text(`Find ${needleToFind} in the sorted list!`, 0, 250);
         }, printNumberToFind);
 
         if (!highLowMidCountState.highInitTime) {
