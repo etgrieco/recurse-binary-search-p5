@@ -71,14 +71,14 @@ export const myp5 = new p5(function (p: p5) {
   };
 
   const needleToFind = (function () {
-    // TODO: REMOVE ME
-    return sortedNumbers[8];
     const randomPresentValue =
       sortedNumbers[Math.floor(Math.random() * sortedNumbers.length)];
-    const shouldUseFoundNeedle = Math.random() > 0.1; // ~10% of the time, turn up empty
-    return shouldUseFoundNeedle
-      ? getRandomPossibleNumber()
-      : randomPresentValue;
+    return randomPresentValue;
+    // TODO: Add ending condition for 'not found' so we can do not found as well
+    // const shouldUseFoundNeedle = Math.random() > 0.1; // ~10% of the time, turn up empty
+    // return shouldUseFoundNeedle
+    //   ? getRandomPossibleNumber()
+    //   : randomPresentValue;
   })();
 
   const sortedNumberObjs = sortedNumbers.map((n) => ({
@@ -163,7 +163,7 @@ export const myp5 = new p5(function (p: p5) {
   const printNumberAtMid: ProcContainer = { proc() {} };
 
   // DEBUG: start phase; should be START in prod
-  animationPhase = "SPIT_OUT_10";
+  animationPhase = "START";
 
   const HIGH_COLOR = [0, 0, 0] as const;
   const LOW_COLOR = [255, 255, 255] as const;
